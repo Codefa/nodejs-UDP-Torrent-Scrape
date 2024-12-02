@@ -30,5 +30,5 @@ The script utilizes UDP tracker protocol to connect and fetch torrent statistics
 
 |param|description|type|
 |--|----|----|
-|tracker URL| UDP or TCP URL (e.g., udp://tracker.example.com:port/announce) | String |
+|tracker URL| UDP tracker URL (e.g., udp://tracker.example.com:port/announce) | String |
 |torrent infohash| 40-character hexadecimal strings | String or Array |
