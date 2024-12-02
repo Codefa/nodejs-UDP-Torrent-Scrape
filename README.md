@@ -28,6 +28,8 @@ The script utilizes UDP tracker protocol to connect and fetch torrent statistics
 })()
 ```
 
+## scrape function params:
+
 |param|description|type|
 |--|----|----|
 |tracker URL| UDP tracker URL (e.g., udp://tracker.example.com:port/announce) | String |
