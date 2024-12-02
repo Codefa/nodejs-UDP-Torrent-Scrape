@@ -1,10 +1,12 @@
 import dgram from 'dgram'
 
-const ScraperException = (message, isConnectionError = false) => ({
-	name: 'ScraperException',
-	message,
-	isConnectionError,
-})
+class ScraperException extends Error {
+	constructor(message, isConnectionError = false) {
+		super(message)
+		this.name = 'ScraperException'
+		this.isConnectionError = isConnectionError
+	}
+}
 
 const generateTransactionId = () => Math.floor(Math.random() * 65535)
 
@@ -12,7 +14,9 @@ const sendPacket = (socket, packet, port, hostname) => {
 	return new Promise((resolve, reject) => {
 		socket.send(packet, 0, packet.length, port, hostname, (err) => {
 			if (err) {
-				reject(ScraperException(`Failed to send packet: ${err.message}`, true))
+				reject(
+					new ScraperException(`Failed to send packet: ${err.message}`, true)
+				)
 			} else {
 				resolve()
 			}
@@ -20,29 +24,36 @@ const sendPacket = (socket, packet, port, hostname) => {
 	})
 }
 
-const receiveResponse = (socket, transactionId) => {
+const receiveResponse = (socket, transactionId, timeout) => {
 	return new Promise((resolve, reject) => {
+		const timer = setTimeout(() => {
+			reject(new ScraperException('Response timed out.'))
+			socket.close()
+		}, timeout)
+
 		socket.once('message', (msg) => {
+			clearTimeout(timer)
 			const action = msg.readUInt32BE(0)
 			const receivedTransactionId = msg.readUInt32BE(4)
 
 			if (receivedTransactionId !== transactionId) {
-				reject(ScraperException('Mismatched transaction ID.'))
+				reject(new ScraperException('Mismatched transaction ID.'))
 				return
 			}
 
-			if (action === 0) {
-				// Connect Response
-				resolve({ type: 'connect', connectionId: msg.slice(8, 16) })
-			} else if (action === 2) {
-				// Scrape Response
-				resolve({ type: 'scrape', msg })
-			} else if (action === 3) {
-				// Error Response
-				const errorMsg = msg.toString('utf8', 8)
-				reject(ScraperException(`Tracker error: ${errorMsg}`))
-			} else {
-				reject(ScraperException('Unexpected action in response.'))
+			switch (action) {
+				case 0:
+					resolve({ type: 'connect', connectionId: msg.slice(8, 16) })
+					break
+				case 2:
+					resolve({ type: 'scrape', msg })
+					break
+				case 3:
+					const errorMsg = msg.toString('utf8', 8)
+					reject(new ScraperException(`Tracker error: ${errorMsg}`))
+					break
+				default:
+					reject(new ScraperException('Unexpected action in response.'))
 			}
 		})
 	})
@@ -55,13 +66,13 @@ const scrape = async (url, infohashes, timeout = 2000) => {
 
 	infohashes.forEach((hash) => {
 		if (!/^[a-f0-9]{40}$/i.test(hash)) {
-			throw ScraperException(`Invalid infohash: ${hash}.`)
+			throw new ScraperException(`Invalid infohash: ${hash}.`)
 		}
 	})
 
 	const urlMatch = url.match(/udp:\/\/([^:/]*)(?::(\d*))?(?:\/)?/i)
 	if (!urlMatch) {
-		throw ScraperException('Invalid tracker URL.')
+		throw new ScraperException('Invalid tracker URL.')
 	}
 
 	const [_, hostname, portStr] = urlMatch
@@ -69,7 +80,6 @@ const scrape = async (url, infohashes, timeout = 2000) => {
 
 	const transactionId = generateTransactionId()
 	const socket = dgram.createSocket('udp4')
-	let timer
 
 	try {
 		const connectionIdBuffer = Buffer.from('0000041727101980', 'hex')
@@ -81,9 +91,13 @@ const scrape = async (url, infohashes, timeout = 2000) => {
 
 		await sendPacket(socket, connectPacket, port, hostname)
 
-		const connectResponse = await receiveResponse(socket, transactionId)
+		const connectResponse = await receiveResponse(
+			socket,
+			transactionId,
+			timeout
+		)
 		if (connectResponse.type !== 'connect') {
-			throw ScraperException('Failed to receive connect response.')
+			throw new ScraperException('Failed to receive connect response.')
 		}
 
 		const { connectionId } = connectResponse
@@ -100,9 +114,9 @@ const scrape = async (url, infohashes, timeout = 2000) => {
 
 		await sendPacket(socket, scrapePacket, port, hostname)
 
-		const scrapeResponse = await receiveResponse(socket, transactionId)
+		const scrapeResponse = await receiveResponse(socket, transactionId, timeout)
 		if (scrapeResponse.type !== 'scrape') {
-			throw ScraperException('Failed to receive scrape response.')
+			throw new ScraperException('Failed to receive scrape response.')
 		}
 
 		const torrents = {}
@@ -119,7 +133,6 @@ const scrape = async (url, infohashes, timeout = 2000) => {
 
 		return torrents
 	} finally {
-		clearTimeout(timer)
 		socket.close()
 	}
 }
@@ -133,7 +146,7 @@ const scrape = async (url, infohashes, timeout = 2000) => {
 		])
 		console.log(result)
 	} catch (error) {
-		if (error.name === 'ScraperException') {
+		if (error instanceof ScraperException) {
 			console.error(`Error: ${error.message}`)
 			console.error(
 				`Connection error: ${error.isConnectionError ? 'yes' : 'no'}`
