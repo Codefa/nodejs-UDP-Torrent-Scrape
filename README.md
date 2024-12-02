@@ -28,7 +28,7 @@ The script utilizes UDP tracker protocol to connect and fetch torrent statistics
 })()
 ```
 
-## scrape function params:
+## scrape function params
 
 |param|description|type|
 |--|----|----|
