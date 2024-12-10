@@ -10,56 +10,53 @@ class ScraperException extends Error {
 
 const generateTransactionId = () => Math.floor(Math.random() * 65535)
 
-const sendPacket = (socket, packet, port, hostname) => {
+const sendPacket = async (socket, packet, port, hostname) => {
 	return new Promise((resolve, reject) => {
 		socket.send(packet, 0, packet.length, port, hostname, (err) => {
 			if (err) {
-				reject(
+				return reject(
 					new ScraperException(`Failed to send packet: ${err.message}`, true)
 				)
-			} else {
-				resolve()
 			}
+			resolve()
 		})
 	})
 }
 
-const receiveResponse = (socket, transactionId, timeout) => {
+const receiveResponse = async (socket, expectedTransactionId, timeout) => {
 	return new Promise((resolve, reject) => {
 		const timer = setTimeout(() => {
-			reject(new ScraperException('Response timed out.'))
+			socket.removeAllListeners('message')
 			socket.close()
+			reject(new ScraperException('Response timed out.'))
 		}, timeout)
 
 		socket.once('message', (msg) => {
 			clearTimeout(timer)
+
 			const action = msg.readUInt32BE(0)
 			const receivedTransactionId = msg.readUInt32BE(4)
 
-			if (receivedTransactionId !== transactionId) {
-				reject(new ScraperException('Mismatched transaction ID.'))
-				return
+			if (receivedTransactionId !== expectedTransactionId) {
+				return reject(new ScraperException('Mismatched transaction ID.'))
 			}
 
 			switch (action) {
-				case 0:
-					resolve({ type: 'connect', connectionId: msg.slice(8, 16) })
-					break
-				case 2:
-					resolve({ type: 'scrape', msg })
-					break
-				case 3:
+				case 0: // Connect
+					return resolve({ type: 'connect', connectionId: msg.slice(8, 16) })
+				case 2: // Scrape
+					return resolve({ type: 'scrape', msg })
+				case 3: // Error
 					const errorMsg = msg.toString('utf8', 8)
-					reject(new ScraperException(`Tracker error: ${errorMsg}`))
-					break
+					return reject(new ScraperException(`Tracker error: ${errorMsg}`))
 				default:
-					reject(new ScraperException('Unexpected action in response.'))
+					return reject(new ScraperException('Unexpected action in response.'))
 			}
 		})
 	})
 }
 
-const scrape = async (url, infohashes, timeout = 2000) => {
+const validateInfohashes = (infohashes) => {
 	if (!Array.isArray(infohashes)) {
 		infohashes = [infohashes]
 	}
@@ -70,18 +67,43 @@ const scrape = async (url, infohashes, timeout = 2000) => {
 		}
 	})
 
-	const urlMatch = url.match(/udp:\/\/([^:/]*)(?::(\d*))?(?:\/)?/i)
+	return infohashes
+}
+
+const parseUrl = (url) => {
+	const urlMatch = url.match(/udp:\/\/([^:/]*)(?::(\d+))?/i)
 	if (!urlMatch) {
 		throw new ScraperException('Invalid tracker URL.')
 	}
 
-	const [_, hostname, portStr] = urlMatch
+	const [, hostname, portStr] = urlMatch
 	const port = portStr ? parseInt(portStr, 10) : 80
+	return { hostname, port }
+}
 
-	const transactionId = generateTransactionId()
+const buildScrapeRequest = (connectionId, transactionId, infohashes) => {
+	const scrapePacket = Buffer.alloc(16 + 20 * infohashes.length)
+	connectionId.copy(scrapePacket, 0)
+	scrapePacket.writeUInt32BE(2, 8) // action: scrape
+
+	scrapePacket.writeUInt32BE(transactionId, 12)
+
+	infohashes.forEach((hash, index) => {
+		const hashBuffer = Buffer.from(hash, 'hex')
+		hashBuffer.copy(scrapePacket, 16 + index * 20)
+	})
+
+	return scrapePacket
+}
+
+async function scrape(url, infohashes, timeout = 2000) {
+	infohashes = validateInfohashes(infohashes)
+
+	const { hostname, port } = parseUrl(url)
 	const socket = dgram.createSocket('udp4')
 
 	try {
+		const transactionId = generateTransactionId()
 		const connectionIdBuffer = Buffer.from('0000041727101980', 'hex')
 		const connectPacket = Buffer.alloc(16)
 
@@ -101,16 +123,11 @@ const scrape = async (url, infohashes, timeout = 2000) => {
 		}
 
 		const { connectionId } = connectResponse
-		const scrapePacket = Buffer.alloc(16 + 20 * infohashes.length)
-
-		connectionId.copy(scrapePacket, 0)
-		scrapePacket.writeUInt32BE(2, 8) // action: scrape
-		scrapePacket.writeUInt32BE(transactionId, 12)
-
-		infohashes.forEach((hash, index) => {
-			const hashBuffer = Buffer.from(hash, 'hex')
-			hashBuffer.copy(scrapePacket, 16 + index * 20)
-		})
+		const scrapePacket = buildScrapeRequest(
+			connectionId,
+			transactionId,
+			infohashes
+		)
 
 		await sendPacket(socket, scrapePacket, port, hostname)
 
@@ -121,15 +138,15 @@ const scrape = async (url, infohashes, timeout = 2000) => {
 
 		const torrents = {}
 		const { msg } = scrapeResponse
-		for (let i = 0; i < infohashes.length; i++) {
-			const offset = 8 + i * 12
-			torrents[infohashes[i]] = {
+		infohashes.forEach((hash, index) => {
+			const offset = 8 + index * 12
+			torrents[hash] = {
 				seeders: msg.readUInt32BE(offset),
 				completed: msg.readUInt32BE(offset + 4),
 				leechers: msg.readUInt32BE(offset + 8),
-				infohash: infohashes[i],
+				infohash: hash,
 			}
-		}
+		})
 
 		return torrents
 	} finally {
@@ -141,6 +158,7 @@ const scrape = async (url, infohashes, timeout = 2000) => {
 ;(async () => {
 	try {
 		const result = await scrape('udp://open.stealth.si:80/announce', [
+			'747A772CD9F952144FE31B977C4D8F89A3F5B227',
 			'71AF7ABED4F9F161F2443CA7BEDE7D9DA1410573',
 			'BD3BC17FC810567AFC1AAD35559E454E5B2453CE',
 		])
