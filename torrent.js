@@ -155,22 +155,24 @@ async function scrape(url, infohashes, timeout = 2000) {
 }
 
 // Example Usage
-;(async () => {
-	try {
-		const result = await scrape('udp://open.stealth.si:80/announce', [
-			'747A772CD9F952144FE31B977C4D8F89A3F5B227',
-			'71AF7ABED4F9F161F2443CA7BEDE7D9DA1410573',
-			'BD3BC17FC810567AFC1AAD35559E454E5B2453CE',
-		])
-		console.log(result)
-	} catch (error) {
-		if (error instanceof ScraperException) {
-			console.error(`Error: ${error.message}`)
-			console.error(
-				`Connection error: ${error.isConnectionError ? 'yes' : 'no'}`
-			)
-		} else {
-			console.error('Unexpected error:', error)
-		}
-	}
-})()
+// ;(async () => {
+// 	try {
+// 		const result = await scrape('udp://open.stealth.si:80/announce', [
+// 			'747A772CD9F952144FE31B977C4D8F89A3F5B227',
+// 			'71AF7ABED4F9F161F2443CA7BEDE7D9DA1410573',
+// 			'BD3BC17FC810567AFC1AAD35559E454E5B2453CE',
+// 		])
+// 		console.log(result)
+// 	} catch (error) {
+// 		if (error instanceof ScraperException) {
+// 			console.error(`Error: ${error.message}`)
+// 			console.error(
+// 				`Connection error: ${error.isConnectionError ? 'yes' : 'no'}`
+// 			)
+// 		} else {
+// 			console.error('Unexpected error:', error)
+// 		}
+// 	}
+// })()
+
+export { scrape }
