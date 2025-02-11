@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Magnet Link Scraper</title>
+		<script src="https://cdn.tailwindcss.com"></script>
+		<!-- Optionally, add Tailwind config for custom breakpoints -->
+	</head>
+	<body class="bg-gray-100">
+		<div class="container mx-auto p-4">
+			<div class="max-w-lg mx-auto bg-white rounded-lg shadow-lg p-6">
+				<h1 class="text-3xl font-bold mb-4 text-center">Magnet Link Scraper</h1>
+				<form id="magnetForm" class="space-y-4">
+					<input
+						type="text"
+						id="magnetInput"
+						placeholder="Paste magnet link here"
+						required
+						class="w-full px-4 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+					/>
+					<button
+						type="submit"
+						class="w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition"
+					>
+						Scrape
+					</button>
+				</form>
+			</div>
+			<div id="resultContainer" class="mt-6"></div>
+		</div>
+		<script>
+			document
+				.getElementById('magnetForm')
+				.addEventListener('submit', async function (e) {
+					e.preventDefault()
+					const submitButton = document.querySelector('button[type="submit"]')
+					// Disable button and add disabled styling for cursor and opacity
+					submitButton.disabled = true
+					submitButton.classList.add('cursor-not-allowed', 'opacity-50')
+					const magnet = document.getElementById('magnetInput').value.trim()
+					const resContainer = document.getElementById('resultContainer')
+					resContainer.innerHTML =
+						'<p class="text-center text-gray-600">Scraping...</p>'
+					try {
+						const res = await fetch('/scrape', {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/json' },
+							body: JSON.stringify({ magnet }),
+						})
+						const data = await res.json()
+						resContainer.innerHTML = generateTable(data.results)
+					} catch (err) {
+						resContainer.innerHTML =
+							'<p class="text-center text-red-600">Error: ' +
+							err.message +
+							'</p>'
+					} finally {
+						// Re-enable submit button and remove disabled styling
+						submitButton.disabled = false
+						submitButton.classList.remove('cursor-not-allowed', 'opacity-50')
+					}
+				})
+
+			function generateTable(results) {
+				let html = `<div class="overflow-x-auto">
+          <table class="min-w-full bg-white border border-gray-200">
+            <thead>
+              <tr class="bg-gray-50">
+                <th class="px-4 py-2 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Tracker</th>
+                <th class="px-4 py-2 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Status</th>
+                <th class="px-4 py-2 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Seeders</th>
+                <th class="px-4 py-2 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Completed</th>
+                <th class="px-4 py-2 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Leechers</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200">`
+				results.forEach((r) => {
+					if (r.data) {
+						const torrent = r.data[Object.keys(r.data)[0]]
+						html += `<tr>
+              <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-800">${r.tracker}</td>
+              <td class="px-4 py-2 whitespace-nowrap text-sm font-medium text-green-600">Success</td>
+              <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-800">${torrent.seeders}</td>
+              <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-800">${torrent.completed}</td>
+              <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-800">${torrent.leechers}</td>
+            </tr>`
+					} else {
+						html += `<tr>
+              <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-800">${r.tracker}</td>
+              <td class="px-4 py-2 whitespace-nowrap text-sm font-medium text-red-600">Error</td>
+              <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-800">-</td>
+              <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-800">-</td>
+              <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-800">-</td>
+            </tr>`
+					}
+				})
+				html += `</tbody>
+          </table>
+        </div>`
+				return html
+			}
+		</script>
+	</body>
+</html>
