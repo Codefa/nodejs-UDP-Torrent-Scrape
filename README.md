@@ -10,6 +10,7 @@ This project scrapes torrent trackers using UDP requests. It includes:
 
 1. Clone the repository.
 2. Install dependencies:
+
    ```bash
    npm install
    ```
