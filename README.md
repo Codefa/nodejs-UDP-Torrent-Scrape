@@ -1,36 +1,35 @@
-# Torrent Tracker Scraper
+# NodeJS UDP Torrent Scrape
 
-This script allows you to scrape torrent tracker information using UDP trackers to retrieve details such as the number of seeders, leechers, completed downloads, and infohash details for specified torrents.
+This project scrapes torrent trackers using UDP requests. It includes:
 
-## Overview
+- A backend built with Express to handle scraping requests.
+- A UDP-based scraper in `torrent.js` using Node's `dgram` module.
+- A simple frontend in `index.html` styled with Tailwind CSS for input and results display.
 
-The script utilizes UDP tracker protocol to connect and fetch torrent statistics based on provided infohashes. It is intended to work with publicly available UDP trackers.
+## Installation
+
+1. Clone the repository.
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
 
 ## Usage
-```js
-(async () => {
-	try {
-		const result = await scrape('udp://open.stealth.si:80/announce', [
-			'71AF7ABED4F9F161F2443CA7BEDE7D9DA1410573',
-			'BD3BC17FC810567AFC1AAD35559E454E5B2453CE',
-		])
-		console.log(result)
-	} catch (error) {
-		if (error.name === 'ScraperException') {
-			console.error(`Error: ${error.message}`)
-			console.error(
-				`Connection error: ${error.isConnectionError ? 'yes' : 'no'}`
-			)
-		} else {
-			console.error('Unexpected error:', error)
-		}
-	}
-})()
-```
+
+1. Start the server:
+   ```bash
+   npm start
+   ```
+2. Open your browser and navigate to [http://localhost:3020](http://localhost:3020).
+
+3. Use the web interface:
+   - Paste a valid magnet link into the input field.
+   - Click the **Scrape** button.
+   - The backend will query all UDP trackers present in the magnet link and display the results in a responsive table with details including Tracker, Status, Seeders, Completed, and Leechers.
 
 ## scrape function params
 
-|param|description|type|
-|--|----|----|
-|tracker URL| UDP tracker URL (e.g., udp://tracker.example.com:port/announce) | String |
-|torrent infohash| 40-character hexadecimal strings | String or Array |
+| param            | description                                                     | type            |
+| ---------------- | --------------------------------------------------------------- | --------------- |
+| tracker URL      | UDP tracker URL (e.g., udp://tracker.example.com:port/announce) | String          |
+| torrent infohash | 40-character hexadecimal strings                                | String or Array |
