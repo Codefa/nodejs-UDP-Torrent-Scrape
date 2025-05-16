@@ -23,16 +23,33 @@ const sendPacket = async (socket, packet, port, hostname) => {
 	})
 }
 
-const receiveResponse = async (socket, expectedTransactionId, timeout) => {
+const receiveResponse = async (
+	socket,
+	expectedTransactionId,
+	timeout,
+	infohashes = []
+) => {
 	return new Promise((resolve, reject) => {
-		const timer = setTimeout(() => {
-			socket.removeAllListeners('message')
-			socket.close()
-			reject(new ScraperException('Response timed out.'))
-		}, timeout)
+		let isResolved = false
 
+		const cleanup = () => {
+			socket.removeAllListeners('message')
+			isResolved = true
+		}
+
+		const timer = setTimeout(() => {
+			cleanup()
+			reject(new ScraperException('Response timed out.', true))
+		}, timeout)
 		socket.once('message', (msg) => {
+			if (isResolved) return
 			clearTimeout(timer)
+
+			// Check minimum response length
+			if (msg.length < 8) {
+				cleanup()
+				return reject(new ScraperException('Too short response.'))
+			}
 
 			const action = msg.readUInt32BE(0)
 			const receivedTransactionId = msg.readUInt32BE(4)
@@ -43,14 +60,25 @@ const receiveResponse = async (socket, expectedTransactionId, timeout) => {
 
 			switch (action) {
 				case 0: // Connect
+					if (msg.length < 16) {
+						return reject(new ScraperException('Too short connect response.'))
+					}
 					return resolve({ type: 'connect', connectionId: msg.slice(8, 16) })
+
 				case 2: // Scrape
+					// Check for expected scrape response length
+					const expectedLength = 8 + 12 * infohashes.length
+					if (msg.length < expectedLength) {
+						return reject(new ScraperException('Too short scrape response.'))
+					}
 					return resolve({ type: 'scrape', msg })
+
 				case 3: // Error
 					const errorMsg = msg.toString('utf8', 8)
 					return reject(new ScraperException(`Tracker error: ${errorMsg}`))
+
 				default:
-					return reject(new ScraperException('Unexpected action in response.'))
+					return reject(new ScraperException('Invalid response action.'))
 			}
 		})
 	})
@@ -59,6 +87,10 @@ const receiveResponse = async (socket, expectedTransactionId, timeout) => {
 const validateInfohashes = (infohashes) => {
 	if (!Array.isArray(infohashes)) {
 		infohashes = [infohashes]
+	}
+
+	if (infohashes.length > 74) {
+		throw new ScraperException('Too many infohashes provided.')
 	}
 
 	infohashes.forEach((hash) => {
@@ -71,13 +103,21 @@ const validateInfohashes = (infohashes) => {
 }
 
 const parseUrl = (url) => {
-	const urlMatch = url.match(/udp:\/\/([^:/]*)(?::(\d+))?/i)
+	const urlMatch = url.match(/^udp:\/\/([^:/]*)(?::([0-9]*))?(?:\/.*)?$/i)
 	if (!urlMatch) {
 		throw new ScraperException('Invalid tracker URL.')
 	}
 
 	const [, hostname, portStr] = urlMatch
+	if (!hostname) {
+		throw new ScraperException('Missing hostname in tracker URL.')
+	}
+
 	const port = portStr ? parseInt(portStr, 10) : 80
+	if (port <= 0 || port > 65535) {
+		throw new ScraperException('Invalid port number.')
+	}
+
 	return { hostname, port }
 }
 
@@ -101,6 +141,10 @@ async function scrape(url, infohashes, timeout = 2000) {
 
 	const { hostname, port } = parseUrl(url)
 	const socket = dgram.createSocket('udp4')
+
+	socket.on('error', (err) => {
+		throw new ScraperException(`UDP socket error: ${err.message}`, true)
+	})
 
 	try {
 		const transactionId = generateTransactionId()
@@ -131,7 +175,12 @@ async function scrape(url, infohashes, timeout = 2000) {
 
 		await sendPacket(socket, scrapePacket, port, hostname)
 
-		const scrapeResponse = await receiveResponse(socket, transactionId, timeout)
+		const scrapeResponse = await receiveResponse(
+			socket,
+			transactionId,
+			timeout,
+			infohashes
+		)
 		if (scrapeResponse.type !== 'scrape') {
 			throw new ScraperException('Failed to receive scrape response.')
 		}
